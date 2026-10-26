@@ -1,0 +1,36 @@
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |
+    additionalArguments:
+      - "--entrypoints.web.http.redirections.entrypoint.to=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+
+    certificatesResolvers:
+      letsencrypt:
+        acme:
+          email: "marni.wild1@proton.me"
+          storage: "/data/acme.json"
+          dnsChallenge:
+            provider: "duckdns"
+
+    env:
+      - name: DUCKDNS_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: duckdns-token
+            key: token
+
+    accessLog:
+      enabled: true
+
+    persistence:
+      enabled: true
+      name: data
+      path: /data
+      size: 128Mi

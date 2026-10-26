@@ -1,0 +1,10 @@
+apiVersion: v2
+name: argocd
+description: A Helm chart with Argo CD as a subchart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: argo-cd
+    version: 10.11.1
+    repository: https://argoproj.github.io/argo-helm

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: platform-services
+description: Shared platform services and Kubernetes resources
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

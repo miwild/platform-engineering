@@ -1,0 +1,43 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/miwild/platform-engineering.git
+    targetRevision: main
+    path: infra/Kubernetes/helm-charts/observability
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nextcloud
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/miwild/platform-engineering.git
+    targetRevision: main
+    path: infra/Kubernetes/helm-charts/nextcloud
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-nextcloud
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

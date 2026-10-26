@@ -468,5 +468,5 @@ alloy:
           }
         }
 
-    mounts:
-      varlog: true
+  mounts:
+    varlog: true

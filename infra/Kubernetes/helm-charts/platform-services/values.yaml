@@ -1,0 +1,11 @@
+issuer:
+  resource_name: acme-issuer
+  namespace: platform-services
+
+  acme_email: marni.wild1@proton.me
+  acme_server: https://acme-v02.api.letsencrypt.org/directory
+
+  privatekey_secret_name: cloudflare-dns-account-key
+
+  api_token_secret_name: mysecret
+  api_token_secret_key: cloudflare-api

@@ -15,7 +15,7 @@ env:
   NAMESPACE: platform-nextcloud
   CONTROLLER_NAMESPACE: default
   HELM_RELEASE: nextcloud
-  CHART_PATH: ./infra/Kubernetes/helm-charts
+  CHART_PATH: ./infra/Kubernetes/helm-charts/nextcloud
   NEXTCLOUD_HOST: nextcloud-demo-flourishing.duckdns.org
 
 jobs:

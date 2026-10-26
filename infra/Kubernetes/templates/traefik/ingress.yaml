@@ -34,3 +34,47 @@ spec:
           port: http
   tls:
     certResolver: letsencrypt
+---
+
+# apiVersion: traefik.io/v1alpha1
+# kind: IngressRoute
+# metadata:
+#   name: argocd-server
+#   namespace: argocd
+# spec:
+#   entryPoints:
+#     - websecure
+#   routes:
+#     - kind: Rule
+#       match: Host(`argocd-demo.duckdns.org`)
+#       priority: 10
+#       services:
+#         - name: argocd-server
+#           port: 80
+#     - kind: Rule
+#       match: Host(`argocd-demo.duckdns.org`) && Header(`Content-Type`, `application/grpc`)
+#       priority: 11
+#       services:
+#         - name: argocd-server
+#           port: 80
+#           scheme: h2c
+#   tls:
+#     certResolver: letsencrypt
+
+# Argo CD — public HTTPS route
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`argocd-demo.duckdns.org`)
+      kind: Rule
+      services:
+        - name: argocd-server
+          port: 80
+  tls:
+    certResolver: letsencrypt

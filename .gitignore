@@ -4,3 +4,4 @@
 terraform.tfvars
 *.tfstate.*
 *.tfplan
+acme.json

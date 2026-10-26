@@ -99,7 +99,7 @@ jobs:
           fi
 
           RESPONSE=$(curl --silent --show-error --fail --get \
-            --data-urlencode "domains=nextcloud-demo-flourishing,grafana-demo" \
+            --data-urlencode "domains=nextcloud-demo-flourishing,grafana-demo,trivy-ui-demo,argocd-demo" \
             --data-urlencode "token=$DUCKDNS_TOKEN" \
             --data-urlencode "ip=$PUBLIC_IP" \
             https://www.duckdns.org/update)

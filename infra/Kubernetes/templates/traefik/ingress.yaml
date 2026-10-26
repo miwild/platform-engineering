@@ -66,7 +66,7 @@ apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: argocd-server
-  namespace: argocd
+  namespace: platform-argocd
 spec:
   entryPoints:
     - websecure
@@ -75,6 +75,26 @@ spec:
       kind: Rule
       services:
         - name: argocd-server
+          port: 80
+  tls:
+    certResolver: letsencrypt
+
+---
+
+# Trivy UI — public HTTPS route
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: trivy-ui-secure
+  namespace: platform-trivy
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`trivy-ui-demo.duckdns.org`)
+      kind: Rule
+      services:
+        - name: trivy-ui
           port: 80
   tls:
     certResolver: letsencrypt

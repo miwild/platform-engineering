@@ -1,0 +1,372 @@
+name: Deploy Trivy UI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trivy-ui-deployment
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ca-central-1
+  NAMESPACE: platform-trivy
+  HELM_RELEASE_OPERATOR: trivy-operator
+  HELM_RELEASE_UI: trivy-ui
+  CHART_PATH_OPERATOR: ./infra/Kubernetes/helm-charts/trivy
+  CHART_PATH_UI: ./infra/Kubernetes/helm-charts/trivy-ui
+
+jobs:
+  deploy-trivy-ui:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.2.4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify infrastructure and resolve endpoints
+        run: |
+          set -euo pipefail
+
+          echo "=== Helm version ==="
+          helm version
+
+          echo "=== Check running Kubernetes host ==="
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters \
+              "Name=tag:Name,Values=k3s-nextcloud-host" \
+              "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "No running k3s-nextcloud-host instance found."
+            exit 1
+          fi
+
+          echo "INSTANCE_ID=$INSTANCE_ID" >> "$GITHUB_ENV"
+          echo "Kubernetes host found."
+
+          echo "=== Check Client VPN ==="
+          ENDPOINT_ID=$(aws ec2 describe-client-vpn-endpoints \
+            --query "ClientVpnEndpoints[?Tags[?Key=='Name' && Value=='education-client-vpn']].ClientVpnEndpointId | [0]" \
+            --output text)
+
+          if [ -z "$ENDPOINT_ID" ] || [ "$ENDPOINT_ID" = "None" ]; then
+            echo "Client VPN endpoint education-client-vpn was not found."
+            exit 1
+          fi
+
+          echo "ENDPOINT_ID=$ENDPOINT_ID" >> "$GITHUB_ENV"
+          echo "Infrastructure checks passed."
+
+      - name: Install OpenVPN
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y openvpn
+
+          kubectl version --client
+          helm version
+          aws --version
+
+      - name: Connect to Client VPN
+        env:
+          VPN_CLIENT_CERT: ${{ secrets.VPN_CLIENT_CERT }}
+          VPN_CLIENT_KEY: ${{ secrets.VPN_CLIENT_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$VPN_CLIENT_CERT" ] || [ -z "$VPN_CLIENT_KEY" ]; then
+            echo "VPN client certificate or key is missing."
+            exit 1
+          fi
+
+          aws ec2 export-client-vpn-client-configuration \
+            --client-vpn-endpoint-id "$ENDPOINT_ID" \
+            --output text > client.ovpn
+
+          {
+            printf '\n<cert>\n'
+            printf '%s\n' "$VPN_CLIENT_CERT"
+            printf '</cert>\n'
+            printf '<key>\n'
+            printf '%s\n' "$VPN_CLIENT_KEY"
+            printf '</key>\n'
+          } >> client.ovpn
+
+          chmod 600 client.ovpn
+
+          sudo openvpn \
+            --config client.ovpn \
+            --daemon \
+            --log /tmp/openvpn.log
+
+          for i in $(seq 1 120); do
+            if ip addr show tun0 >/dev/null 2>&1; then
+              break
+            fi
+            sleep 5
+          done
+
+          if ! ip addr show tun0 >/dev/null 2>&1; then
+            echo "Client VPN connection failed."
+            cat /tmp/openvpn.log
+            exit 1
+          fi
+
+          echo "Client VPN connected."
+
+      - name: Configure Kubernetes through SSM
+        run: |
+          set -euo pipefail
+
+          IP=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+            --output text)
+
+          if [ -z "$IP" ] || [ "$IP" = "None" ]; then
+            echo "Unable to resolve the Kubernetes host private IP."
+            exit 1
+          fi
+
+          mkdir -p "$HOME/.kube"
+
+          for i in $(seq 1 40); do
+            COMMAND_ID=$(aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --parameters '{"commands":["test -s /etc/rancher/k3s/k3s.yaml && /usr/local/bin/k3s kubectl get nodes | grep -qw Ready && cat /etc/rancher/k3s/k3s.yaml"]}' \
+              --query 'Command.CommandId' \
+              --output text) || {
+                sleep 10
+                continue
+              }
+
+            if aws ssm wait command-executed \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID"; then
+
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --query 'StandardOutputContent' \
+                --output text > "$HOME/.kube/config"
+
+              break
+            fi
+
+            sleep 10
+          done
+
+          if [ ! -s "$HOME/.kube/config" ]; then
+            echo "K3s did not become ready or kubeconfig could not be retrieved."
+            exit 1
+          fi
+
+          chmod 600 "$HOME/.kube/config"
+
+          sed -i "s/127.0.0.1/$IP/g" "$HOME/.kube/config"
+
+          echo "=== Kubernetes nodes ==="
+          kubectl get nodes
+
+          echo "=== Kubernetes namespaces ==="
+          kubectl get namespaces
+
+      - name: Pre-stage ACME certificate storage
+        env:
+          ACME_JSON: ${{ secrets.ACME_JSON }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$ACME_JSON" ]; then
+            echo "ACME_JSON is not set; skipping certificate storage pre-stage."
+            exit 0
+          fi
+
+          ENCODED_ACME=$(printf '%s' "$ACME_JSON" | base64 -w 0)
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters "{\"commands\":[
+              \"mkdir -p /var/lib/rancher/k3s/storage/traefik-acme\",
+              \"printf '%s' '$ENCODED_ACME' | base64 -d > /var/lib/rancher/k3s/storage/traefik-acme/acme.json\",
+              \"chmod 600 /var/lib/rancher/k3s/storage/traefik-acme/acme.json\"
+            ]}" \
+            --query 'Command.CommandId' \
+            --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID"
+
+          echo "ACME certificate storage staged."
+
+      - name: Update ACME Secret on cluster
+        run: |
+          set -euo pipefail
+
+          ACME_FILE="$RUNNER_TEMP/acme.json"
+
+          echo "Pulling ACME file from remote host..."
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters "{\"commands\":[\"cat /var/lib/rancher/k3s/storage/traefik-acme/acme.json\"]}" \
+            --query 'Command.CommandId' \
+            --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID"
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text > "$ACME_FILE"
+
+          if [ ! -s "$ACME_FILE" ]; then
+            echo "Error: ACME file not found or empty on the remote host."
+            exit 1
+          fi
+
+          echo "Creating/updating Traefik ACME Secret..."
+          kubectl create secret generic traefik-acme \
+            -n kube-system \
+            --from-file=acme.json="$ACME_FILE" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create Trivy namespaces
+        run: |
+          set -euo pipefail
+
+          echo "Creating/updating platform-trivy namespace..."
+          kubectl create namespace platform-trivy \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl get namespace platform-trivy
+
+      - name: Install Trivy Operator
+        run: |
+          set -euo pipefail
+
+          echo "Adding Aqua Security Helm repository..."
+          helm repo add aquasecurity https://aquasecurity.github.io/helm-charts/
+          helm repo update
+
+          echo "Installing Trivy Operator via Helm..."
+          helm dependency build "$CHART_PATH_OPERATOR"
+          
+          helm upgrade --install "$HELM_RELEASE_OPERATOR" \
+            "$CHART_PATH_OPERATOR" \
+            --namespace "$NAMESPACE" \
+            --create-namespace \
+            --wait \
+            --timeout 300s
+
+      - name: Create or update Trivy UI auth secret
+        env:
+          TRIVY_UI_PASSWORD_HASH: ${{ secrets.TRIVY_UI_PASSWORD_HASH }}
+        run: |
+          set -euo pipefail
+          
+          envsubst < infra/Kubernetes/helm-charts/trivy-ui/auth.yaml > /tmp/auth.yaml
+
+          kubectl create secret generic trivy-ui-auth \
+            --namespace platform-trivy \
+            --from-file=auth.yaml=/tmp/auth.yaml \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Install Trivy UI
+        run: |
+          set -euo pipefail
+
+          echo "Adding Trivy UI Helm repository..."
+          helm repo add trivy-ui https://locustbaby.github.io/trivy-ui/
+          helm repo update
+
+          echo "Installing Trivy UI via Helm..."
+          helm dependency build "$CHART_PATH_UI"
+          
+          helm upgrade --install "$HELM_RELEASE_UI" \
+            "$CHART_PATH_UI" \
+            --namespace "$NAMESPACE" \
+            --create-namespace \
+            --wait \
+            --timeout 300s
+
+
+
+      - name: Apply Trivy UI ingress route
+        run: |
+          set -euo pipefail
+
+          echo "Create namespaces if they dont exist"
+          kubectl create namespace platform-nextcloud --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace platform-observability --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace platform-argocd --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace platform-trivy --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "=== Check Traefik CRD ==="
+
+          if ! kubectl get crd ingressroutes.traefik.io >/dev/null 2>&1; then
+            echo "Traefik IngressRoute CRD is missing."
+            exit 1
+          fi
+
+          echo "=== Apply configured IngressRoutes ==="
+
+          kubectl apply \
+            -f infra/Kubernetes/templates/traefik/ingress.yaml
+
+          echo "=== Verify Trivy UI Service ==="
+
+          kubectl get service trivy-ui \
+            --namespace "$NAMESPACE"
+
+          echo "=== Verify Trivy UI route ==="
+
+          kubectl get ingressroute trivy-ui-secure \
+            --namespace "$NAMESPACE" \
+            -o yaml
+
+      - name: Final verification
+        run: |
+          set -euo pipefail
+
+          echo "=== Pods ==="
+          kubectl get pods --namespace platform-trivy -o wide
+
+          echo "=== Services ==="
+          kubectl get services --namespace platform-trivy
+
+          echo "=== Deployments ==="
+          kubectl get deployments --namespace platform-trivy
+
+          echo "Trivy UI URL: http://trivy-ui.platform-trivy"
+
+          echo "Deployment checks passed."

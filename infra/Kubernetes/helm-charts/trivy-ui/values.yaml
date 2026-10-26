@@ -1,0 +1,39 @@
+# Trivy UI values
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+
+# Image configuration
+image:
+  repository: locustbaby/trivy-ui
+  tag: "v0.0.5"
+  pullPolicy: IfNotPresent
+
+# Authentication: public dashboard, no login
+auth:
+  mode: none
+
+# Auth configuration via environment variables
+# (The chart doesn't have native auth values, auth is handled via secret)
+
+# Set this to re-enable auth
+# env:
+#   # Mount the auth secret as a configmap
+#   AUTH_ENABLED: "true"
+#   AUTH_MODE: "local"
+
+# Cache configuration
+cache:
+  enabled: true
+  sizeLimit: "1Gi"
+
+# Resources
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi

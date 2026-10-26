@@ -1,0 +1,10 @@
+apiVersion: v2
+name: trivy-ui
+description: A Helm chart with Trivy UI as a subchart
+type: application
+version: 0.1.0
+appVersion: "0.0.5"
+dependencies:
+  - name: trivy-ui
+    version: "0.0.5"
+    repository: oci://registry-1.docker.io/locustbaby

@@ -4,3 +4,8 @@ argo-cd:
   configs:
     params:
       server.insecure: true
+    cm:
+      url: https://argocd-demo.duckdns.org
+      users.anonymous.enabled: "true"
+    rbac:
+      policy.default: role:readonly

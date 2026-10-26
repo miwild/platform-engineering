@@ -3,7 +3,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: observability
-  namespace: argocd
+  namespace: platform-argocd
 spec:
   project: default
   source:
@@ -25,7 +25,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: nextcloud
-  namespace: argocd
+  namespace: platform-argocd
 spec:
   project: default
   source:
@@ -35,6 +35,48 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: platform-nextcloud
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: platform-argocd
+spec:
+  project: defaultp
+  source:
+    repoURL: https://github.com/miwild/platform-engineering.git
+    targetRevision: main
+    path: infra/Kubernetes/helm-charts/argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trivy-ui
+  namespace: platform-argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/miwild/platform-engineering.git
+    targetRevision: main
+    path: infra/Kubernetes/helm-charts/trivy-ui
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-trivy
   syncPolicy:
     automated:
       prune: true

@@ -1,0 +1,27 @@
+# Trivy Operator values
+# Note: Cluster-level RBAC cannot be granted via the pi-agent due to RBAC escalation prevention.
+# The following resources need to be created manually by an admin:
+#   - ClusterRole/trivy-operator
+#   - ClusterRoleBinding/trivy-operator
+#   - Role/trivy-operator-leader-election (in platform-trivy namespace)
+#   - RoleBinding/trivy-operator-leader-election (in platform-trivy namespace)
+
+# Disable compliance scanning to avoid ClusterComplianceReport issues
+compliance:
+  enabled: false
+
+# Disable cluster compliance
+clusterComplianceEnabled: false
+
+# Use namespace-scoped scanning only
+vulnerabilityScanner:
+  enabled: true
+
+configAuditScanner:
+  enabled: true
+
+rbacAssessmentScanner:
+  enabled: false
+
+infraAssessmentScanner:
+  enabled: false

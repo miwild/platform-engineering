@@ -1,0 +1,7 @@
+version: v1
+users:
+  admin:
+    passwordHash: "${TRIVY_UI_PASSWORD_HASH}"
+    scopes:
+      - cluster: "*"
+        namespaces: ["*", "_"]

@@ -361,6 +361,11 @@ jobs:
           set -euo pipefail
           ROUTES=infra/Kubernetes/templates/traefik/ingress.yaml
 
+          kubectl create namespace platform-nextcloud --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace platform-observability --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace platform-argocd --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace platform-trivy --dry-run=client -o yaml | kubectl apply -f -
+
           if ! kubectl get crd ingressroutes.traefik.io >/dev/null 2>&1; then
             echo "::warning file=$ROUTES::Traefik CRDs are not installed; skipping IngressRoutes."
             exit 0

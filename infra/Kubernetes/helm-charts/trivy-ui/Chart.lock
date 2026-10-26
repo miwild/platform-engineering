@@ -1,0 +1,6 @@
+dependencies:
+- name: trivy-ui
+  repository: oci://registry-1.docker.io/locustbaby
+  version: 0.0.5
+digest: sha256:38dedc6ff698eadc2880d8aa603063f70877889444f89a37fe1b62cca5bea69b
+generated: "2026-10-26T16:59:10.88222-03:00"

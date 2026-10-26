@@ -1,0 +1,10 @@
+apiVersion: v2
+name: trivy-operator
+description: A Helm chart with trivy operator as a subchart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: trivy-operator
+    version: 0.37.0
+    repository: https://aquasecurity.github.io/helm-charts/

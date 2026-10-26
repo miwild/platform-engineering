@@ -1,0 +1,88 @@
+Stage 1 Trivy operator
+
+You will add the platform-trivy namespace
+
+Create a new directory inside infra/Kubernetes/k3-d/helm-charts called trivy. Do all your working in this directory for this stage
+Add a simple chart for trivy operator oci://ghcr.io/aquasecurity/helm-charts/trivy-operator
+
+helm repo add aqua https://aquasecurity.github.io/helm-charts/
+helm repo update
+
+helm upgrade --install trivy-operator aqua/trivy-operator \
+  --namespace platform-trivy \
+  --create-namespace \
+  --version 0.38.0
+
+
+Verify that scanning works
+kubectl get pods -n platform-trivy
+kubectl logs -n platform-trivy deployment/trivy-operator
+
+Then inspect reports across your cluster (if nothing is deployed deploy something simple to check)
+kubectl get vulnerabilityreports -A
+kubectl get configauditreports -A
+kubectl get rbacassessmentreports -A
+
+Stage 2 Trivy UI:
+
+You will add the platform-trivy-ui namespace.
+
+If you need to look at docs: https://github.com/locustbaby/trivy-ui
+
+create a new directory inside infra/Kubernetes/k3-d/helm-charts called trivy-ui. Do all your working in this directory for this stage
+Add a simple chart for trivy ui
+oci://registry-1.docker.io/locustbaby/trivy-ui
+
+create a simple bcrypt hash 
+
+Create auth.yaml with this
+version: v1
+users:
+  admin:
+    passwordHash: "$YOUR_GENERATED_BCRYPT_HASH"
+    scopes:
+      - cluster: "*"
+        namespaces: ["*", "_"]
+
+
+
+kubectl create secret generic trivy-ui-auth \
+  -n platform-trivy \
+  --from-file=auth.yaml=auth.yaml \
+  --from-literal=session-secret="$(openssl rand -hex 32)"
+
+Add a simple values file with auth mode: local and auth.local.existingSecret download and check the chart with helm show values to make sure you get syntax right.
+
+Expose it through Traefik
+ you can use the same IngressRoute pattern as your Grafana and Nextcloud routes. First, confirm the actual Service name and port created by the chart:
+kubectl get svc -n platform-trivy Assuming the Service is named trivy-ui and exposes port 80, the route would look like this:
+
+
+Add the following inside infra/Kubernetes/k3d-dev/templates/traefik/sample-ingressroute.yaml seperated by '---' like the other routes.
+# Trivy UI — public HTTPS route
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: trivy-ui-secure
+  namespace: platform-trivy
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`trivy-ui-demo.duckdns.org`)
+      kind: Rule
+      services:
+        - name: trivy-ui
+          port: 80
+  tls:
+    secretName: trivy-ui-tls
+
+The Service name and port should match the output of kubectl get svc.
+
+Do not apply the ingress it will be used later on.
+
+verify everything:
+kubectl get pods,svc -n platform-trivy
+kubectl logs -n platform-trivy deployment/trivy-ui
+kubectl get vulnerabilityreports -A
+

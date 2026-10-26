@@ -1,0 +1,109 @@
+# ---------------------------------------------------------------------------
+# trivy bootstrap RBAC  -  APPLY AS CLUSTER-ADMIN (the pi-agent SA cannot
+# create this itself: Kubernetes RBAC escalation protection rejects it).
+#
+# Two separate needs, both blocking the trivy stages:
+#
+# (1) pi-agent-trivy-reports-view
+#     Read-only access to the trivy-operator report CRDs so that the
+#     verification commands work for the agent identity:
+#         kubectl get vulnerabilityreports -A
+#         kubectl get configauditreports -A
+#         kubectl get rbacassessmentreports -A
+#     Without it those return Forbidden (the pi-agent-deployer ClusterRole only
+#     lists core/apps/batch/monitoring/traefik API groups, and it was written
+#     before the aquasecurity.github.io CRDs existed).
+#     In the deployed chart this is the same rule set as the upstream
+#     aggregate-*-view ClusterRoles:
+#         kubectl get clusterrole aggregate-vulnerability-reports-view -o yaml
+#
+# (2) pi-agent-can-bind-trivy-roles
+#     Both trivy charts create their own workload RBAC (trivy-operator:
+#     ClusterRole/ClusterRoleBinding + leader-election Role/RoleBinding,
+#     aggregate-*-view ClusterRoles; trivy-ui: trivy-ui and
+#     trivy-ui-discovery ClusterRoles + bindings). Creating those objects and
+#     binding them is rejected for pi-agent because it does not itself hold
+#     those permissions and has no bind/escalate verb:
+#         roles.rbac.authorization.k8s.io "trivy-operator" is forbidden:
+#         ... attempting to grant RBAC permissions not currently held
+#     --set rbac.create=false is NOT an option: the operator only creates
+#     reports if granted what generated/role.yaml asks for.
+#     This block scopes bind/escalate to the rbac.authorization.k8s.io API
+#     group only (no wildcard RBAC is touched; revoke by deleting the two
+#     objects).
+#
+# Apply:
+#   kubectl apply -f infra/Kubernetes/k3d-dev/templates/rbac/trivy-bootstrap-rbac.yaml
+# ---------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pi-agent-trivy-reports-view
+  labels:
+    app.kubernetes.io/part-of: trivy
+rules:
+  - apiGroups:
+      - aquasecurity.github.io
+    resources:
+      - vulnerabilityreports
+      - clustervulnerabilityreports
+      - configauditreports
+      - clusterconfigauditreports
+      - rbacassessmentreports
+      - clusterrbacassessmentreports
+      - exposedsecretreports
+      - sbomreports
+      - clustersbomreports
+      - infraassessmentreports
+      - clusterinfraassessmentreports
+      - clustercompliancereports
+      - clustercompliancedetailreports
+      - compliancereports
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pi-agent-trivy-reports-view
+subjects:
+  - kind: ServiceAccount
+    name: pi-agent
+    namespace: agent-dev
+roleRef:
+  kind: ClusterRole
+  name: pi-agent-trivy-reports-view
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pi-agent-can-bind-trivy-roles
+  labels:
+    app.kubernetes.io/part-of: trivy
+rules:
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+      - clusterrolebindings
+      - roles
+      - rolebindings
+    verbs:
+      - bind
+      - escalate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pi-agent-can-bind-trivy-roles
+subjects:
+  - kind: ServiceAccount
+    name: pi-agent
+    namespace: agent-dev
+roleRef:
+  kind: ClusterRole
+  name: pi-agent-can-bind-trivy-roles
+  apiGroup: rbac.authorization.k8s.io

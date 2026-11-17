@@ -98,3 +98,21 @@ spec:
           port: 80
   tls:
     certResolver: letsencrypt
+---
+# Trivy UI — public HTTPS route
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: kubecost-secure
+  namespace: platform-kubecost
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`kubecost-demo.duckdns.org`)
+      kind: Rule
+      services:
+        - name: kubecost-frontend
+          port: 9090
+  tls:
+    certResolver: letsencrypt

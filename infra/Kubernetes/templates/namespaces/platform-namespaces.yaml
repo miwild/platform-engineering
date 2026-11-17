@@ -11,6 +11,11 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: platform-kubecost
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: platform-argocd
 ---
 apiVersion: v1

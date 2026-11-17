@@ -1,0 +1,11 @@
+apiVersion: v2
+name: kubecost
+description: A Helm chart with kubecost as a subchart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: kubecost
+    version: 3.3.2
+    repository: https://kubecost.github.io/kubecost
+

@@ -268,7 +268,7 @@ resource "aws_eip" "k3s_ip" {
 # K3s EC2 instance
 resource "aws_instance" "k3s_server" {
   ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t3.medium"
+  instance_type               = "t3.xlarge"
   root_block_device {
     volume_size           = 30
     volume_type           = "gp3"
